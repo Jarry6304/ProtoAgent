@@ -1,0 +1,19 @@
+{
+  "name": "protoagent",
+  "version": "0.1.0",
+  "description": "架構設計顧問 Agent — 基於 Teammate + Skills 模式的自我驗證架構師",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun run --watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.5.0"
+  }
+}
