@@ -5,12 +5,18 @@
 
 ## 技能清單目錄（Skill Discovery）
 
-| Skill | 一句話描述 |
-|-------|-----------|
-| skill_cache_opt | 快取經濟學、14 種快取破壞向量追蹤與防護 |
-| skill_security | 四層安全縱深、bashSecurity 25+ 驗證器 |
-| skill_memory_rem | 三層記憶架構、autoDream 做夢機制 |
-| skill_agentic_loop | QueryEngine 推理迴圈、五步預處理管線 |
+| Skill | 對應規格章節 | 一句話描述 |
+|-------|-------------|-----------|
+| skill_cache_opt | §3 | 快取經濟學、14 種快取破壞向量追蹤與防護 |
+| skill_security | §6, §9 | 四層安全縱深、bashSecurity 25+ 驗證器、反蒸餾防禦 |
+| skill_memory_rem | §8 | 三層記憶架構、autoDream 做夢機制 |
+| skill_agentic_loop | §2, §4 | QueryEngine 推理迴圈、五步預處理管線 |
+| skill_tool_system | §5 | 工具統一介面 47 欄位、MCP 整合、延遲載入 |
+| skill_multi_agent | §7 | 三種子智能體模式、信箱通訊、自然語言編排 |
+| skill_terminal_render | §10 | 遊戲引擎級終端渲染、Diff Patch、LRU 快取 |
+| skill_hook_system | §11 | 25+ 生命週期事件、四種處理器、IDE 橋接 |
+| skill_unreleased | §12 | 雙旗標系統、KAIROS、ULTRAPLAN、BUDDY |
+| skill_architecture_overview | §1, §13, §14 | 三層架構模型、依賴全景圖、十大原則 |
 
 ## 專案記憶 (project)
 
