@@ -33,6 +33,11 @@ import {
   createPermissionGate,
   createToolExecutor,
 } from "./tools/index.js";
+import {
+  createClaudeClient,
+  type ChatMessage,
+  type ClaudeClient,
+} from "./client/index.js";
 
 /** ProtoAgent 主類別 */
 export class ProtoAgent {
@@ -45,10 +50,18 @@ export class ProtoAgent {
   private toolRegistry = createToolRegistry();
   private permissionGate = createPermissionGate();
   private toolExecutor = createToolExecutor();
+  private claude: ClaudeClient;
+  private conversationHistory: ChatMessage[] = [];
   private sessionId: string;
 
   constructor() {
     this.sessionId = `session_${Date.now()}`;
+    this.claude = createClaudeClient({
+      model: "claude-opus-4-6",
+      maxTokens: 16000,
+      streaming: true,
+      thinking: true,
+    });
     this.log("system", "ProtoAgent 初始化完成");
   }
 
@@ -81,50 +94,65 @@ export class ProtoAgent {
    * 處理使用者輸入
    *
    * 流程：
-   * 1. 自動偵測並載入相關技能
-   * 2. 執行 QueryEngine 推理迴圈
-   * 3. 驗證建議的正確性
+   * 1. 自動偵測並載入相關技能（漸進式揭露）
+   * 2. 將技能內容注入系統提示詞
+   * 3. 呼叫 Claude API 取得回應
+   * 4. 記錄對話歷史與成本
    */
   async processInput(userInput: string): Promise<string> {
-    // 自動偵測並載入相關技能（漸進式揭露）
+    // Step 1: 自動偵測並載入相關技能
     const newSkills = this.skillLoader.autoDetectAndLoad(userInput);
     if (newSkills.length > 0) {
       const names = newSkills.map((s) => s.name).join(", ");
       this.log("skill", `已載入技能: ${names}`);
+
+      // 重新組裝系統提示詞（含新載入的技能）
+      const memoryIndex = this.memory.loadIndex();
+      this.persona.systemPrompt = assembleSystemPrompt(
+        this.persona,
+        this.skillLoader.listSkills(),
+        memoryIndex,
+      );
     }
 
-    const responses: string[] = [];
+    // Step 2: 加入使用者訊息到對話歷史
+    this.conversationHistory.push({ role: "user", content: userInput });
+    this.engine.addMessage("user", userInput);
 
-    // 執行推理迴圈
-    const loop = this.engine.runLoop(userInput, async (messages) => {
-      // 此處為推理迭代的佔位實作
-      // 實際應連接 LLM API（如 Anthropic Claude API）
-      return {
-        type: "text" as const,
-        content: `[Arch-Verifier] 已收到查詢，正在分析...`,
-        tokensUsed: this.estimateTokens(userInput),
-        costUsd: 0,
-      };
-    });
+    // Step 3: 呼叫 Claude API
+    try {
+      const response = await this.claude.sendMessage(
+        this.persona.systemPrompt,
+        this.conversationHistory,
+      );
 
-    for await (const iteration of loop) {
-      switch (iteration.type) {
-        case "text":
-          responses.push(iteration.content);
-          break;
-        case "compact":
-          this.log("engine", "已執行自動壓縮");
-          break;
-        case "budget_exceeded":
-          responses.push("[警告] Token 預算已超出，建議開啟新會話");
-          break;
-        case "circuit_break":
-          responses.push("[錯誤] 斷路器已觸發，需要人工介入");
-          break;
+      // Step 4: 記錄助手回應到對話歷史
+      this.conversationHistory.push({
+        role: "assistant",
+        content: response.text,
+      });
+      this.engine.addMessage("assistant", response.text);
+
+      // 記錄成本與 token 使用
+      this.log(
+        "query",
+        `tokens: ${response.inputTokens}+${response.outputTokens} | ` +
+          `cache: ${response.cacheReadTokens} | ` +
+          `cost: $${response.costUsd.toFixed(4)} | ` +
+          `stop: ${response.stopReason}`,
+      );
+
+      if (response.thinking) {
+        this.log("thinking", response.thinking.slice(0, 500));
       }
-    }
 
-    return responses.join("\n");
+      return response.text;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : String(error);
+      this.log("error", `Claude API 錯誤: ${message}`);
+      return `[錯誤] 無法取得 Claude 回應: ${message}`;
+    }
   }
 
   /** 執行驗證流程 */
@@ -195,19 +223,54 @@ export function createProtoAgent(): ProtoAgent {
   return new ProtoAgent();
 }
 
-// 主程式入口
+// 主程式入口 — 互動式 REPL
 async function main(): Promise<void> {
-  console.log("🏗️  ProtoAgent — 架構設計顧問 Agent");
-  console.log("═".repeat(50));
+  console.log("ProtoAgent — 架構設計顧問 Agent");
+  console.log("=".repeat(50));
 
   const agent = createProtoAgent();
   await agent.initialize();
 
   const status = agent.getStatus();
-  console.log("\n📊 Agent 狀態:");
+  console.log("\nAgent 狀態:");
   console.log(JSON.stringify(status, null, 2));
 
-  console.log("\n✅ ProtoAgent 已就緒，等待輸入...");
+  console.log("\n已就緒！輸入問題開始對話（輸入 'exit' 離開）\n");
+
+  // 簡易 REPL 迴圈
+  const reader = require("node:readline").createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const askQuestion = (): void => {
+    reader.question("You> ", async (input: string) => {
+      const trimmed = input.trim();
+      if (!trimmed || trimmed === "exit") {
+        console.log("\n再見！");
+        reader.close();
+        return;
+      }
+
+      if (trimmed === "status") {
+        console.log(JSON.stringify(agent.getStatus(), null, 2));
+        askQuestion();
+        return;
+      }
+
+      console.log("\nArch-Verifier>");
+      const response = await agent.processInput(trimmed);
+      if (!response.startsWith("[錯誤]")) {
+        // 串流模式下文字已即時輸出，這裡不需重複
+      } else {
+        console.log(response);
+      }
+      console.log();
+      askQuestion();
+    });
+  };
+
+  askQuestion();
 }
 
 main().catch(console.error);
